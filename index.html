@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <title>RIALO</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@600&display=swap');
+    *, *::before, *::after {margin:0;padding:0;box-sizing:border-box;}
+
+    /* Brand palette */
+    :root{
+      --bg: #EFE8D8;         /* page background (beige) */
+      --surface: #F4F1EB;    /* card surfaces (lighter beige) */
+      --text: #1b1b18;       /* primary text / dark black */
+      --muted: #666155;      /* secondary text (muted brownish) */
+      --accent: #C4A484;     /* subtle accent */
+      --cta: #8A6E4A;        /* call-to-action */
+      --border: rgba(0,0,0,0.06);
+      --shadow: rgba(138,110,74,0.12);
+      --map-bg: #0b0b0b;     /* dark map background */
+      --marker-outline: #ffffff;
+      --marker-glow: rgba(138,110,74,0.24);
+    }
+
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); overflow: hidden;
+      height: 100dvh; width: 100vw; font-family: 'Rajdhani', sans-serif;
+      color: var(--text); touch-action: manipulation; position: fixed;
+    }
+
+    /* Map: fill page, dark style */
+    #map {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; z-index: 1;
+      background: var(--map-bg);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .leaflet-control-zoom, .leaflet-control-attribution {display: none !important;}
+
+    /* --- Header / Title Bar (beige now) --- */
+    .title-bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 110px;
+      background: var(--bg); /* changed to full beige so the title sits on beige */
+      display: flex; align-items: center; justify-content: center; gap: 15px;
+      z-index: 100; user-select: none; padding-top: env(safe-area-inset-top);
+      flex-wrap: wrap; padding: 10px;
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+    }
+
+    #ritualLogo {
+      width: 70px; height: 70px; cursor: pointer;
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+      position: relative; flex-shrink: 0; border-radius: 14px;
+      background: linear-gradient(180deg, rgba(138,110,74,0.04), rgba(0,0,0,0.02));
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 6px 20px var(--shadow);
+    }
+    #ritualLogo img {width: 62px; height: 62px; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 2;}
+    #ritualLogo::before {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 68%; height: 68%; background: url('rialo.png') center/contain no-repeat;
+      opacity: 0.12; z-index: -1; pointer-events: none;
+    }
+    #ritualLogo:hover { transform: scale(1.08); box-shadow: 0 10px 30px rgba(138,110,74,0.18); }
+
+    .title-text {
+      font-family: 'Orbitron', sans-serif; font-weight: 900;
+      color: var(--text); letter-spacing: 6px; cursor: pointer;
+      position: relative; font-size: clamp(28px, 6vw, 48px);
+      white-space: nowrap; text-align: center; -webkit-text-stroke: 0.3px rgba(0,0,0,0.04);
+    }
+    .title-text::before {
+      content: 'RIALO'; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      font-size: inherit; letter-spacing: 6px; opacity: 0.04; color: var(--muted); z-index: -1;
+    }
+
+    /* subtitle: made larger and darker black */
+    .subtitle {
+      position: fixed; top: calc(110px + env(safe-area-inset-top));
+      left: 50%; transform: translateX(-50%);
+      font-size: 18px; /* bigger */
+      font-weight: 700; /* darker/heavier */
+      letter-spacing: 1px;
+      color: var(--text); /* dark black for visibility */
+      font-family: 'Rajdhani', sans-serif;
+      white-space: nowrap; z-index: 100; opacity: 0.98;
+      margin-top: 6px;
+    }
+
+    .counter-box {
+      position: fixed; top: 20px; right: 20px; z-index: 100;
+      background: rgba(244,241,235,0.98); border: 1px solid var(--border);
+      border-radius: 16px; padding: 12px 18px; box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+      font-family: 'Orbitron', sans-serif; text-align: center; min-width: 160px; backdrop-filter: blur(6px);
+    }
+    .counter-box .count { font-size: 36px; font-weight: 900; color: var(--text); line-height: 1; margin-bottom: 3px; }
+    .counter-box .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.6px; }
+
+    .modal {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100dvh;
+      background: rgba(239,232,216,0.95); backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center; z-index: 200; padding: 20px; overflow-y: auto;
+      padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+      opacity: 0; transition: opacity 0.18s ease;
+    }
+    .modal.show {display: flex; opacity: 1;}
+
+    .card {
+      width: 430px; max-width: 95vw; background: var(--surface); padding: 42px 36px;
+      border: 1px solid var(--border); border-radius: 18px; text-align: center; position: relative;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.06); transform: scale(0.98); transition: transform 0.18s ease;
+    }
+    .modal.show .card {transform: scale(1);}
+
+    .close-btn {
+      position: absolute; top: 18px; right: 20px; width: 40px; height: 40px;
+      background: transparent; border: 1px solid var(--border); border-radius: 50%;
+      color: var(--muted); font-size: 22px; cursor: pointer; transition: 0.16s;
+    }
+    .close-btn:hover {background: rgba(138,110,74,0.06); transform: rotate(10deg);}
+
+    .card h2 {
+      font-family: 'Orbitron', sans-serif; color: var(--text); font-size: 24px; margin-bottom: 18px; letter-spacing: 4px;
+    }
+
+    .avatar-circle {
+      width: 120px; height: 120px; border-radius: 50%; margin: 18px auto;
+      border: 4px solid var(--border); overflow: hidden; background: #fff; box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+      position: relative;
+    }
+    .avatar-circle img {width: 100%; height: 100%; object-fit: cover; z-index: 2;}
+    .avatar-circle::before {
+      content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 60%; height: 60%; background: url('rialo.png') center/contain no-repeat; opacity: 0.06; z-index: 1; pointer-events: none;
+    }
+
+    .upload-btn, .input-field, .pledge-field {
+      width: 100%; padding: 16px; margin: 14px 0; background: transparent;
+      border: 1px dashed var(--border); border-radius: 12px; color: var(--muted);
+      font-size: 16px; text-align: center; cursor: pointer; transition: 0.18s;
+    }
+    .upload-btn:hover, .input-field:focus, .pledge-field:focus { background: rgba(138,110,74,0.03); border-style: solid; outline: none; }
+    .pledge-field {height: 96px; resize: none; text-align: left; padding: 16px; font-size: 14px; color: var(--text);}
+
+    .join-btn {
+      margin-top: 18px; padding: 14px 60px; background: var(--cta); color: #fff;
+      border: none; border-radius: 999px; font-family: 'Orbitron', sans-serif; font-size: 18px; font-weight: 900;
+      cursor: pointer; box-shadow: 0 10px 30px rgba(138,110,74,0.18); transition: 0.18s; position: relative; overflow: hidden;
+    }
+    .join-btn:hover {transform: translateY(-4px); box-shadow: 0 18px 40px rgba(138,110,74,0.22);}
+    .join-btn:active {transform: translateY(0);}
+
+    .success {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; background: var(--bg);
+      display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 300;
+      color: var(--text); text-align: center; opacity: 0; transition: opacity 0.18s ease; padding: 20px;
+    }
+    .success.active {display: flex; opacity: 1;}
+    .success h1 { font-family: 'Orbitron', sans-serif; font-size: clamp(36px, 10vw, 56px); margin: 0; position: relative; z-index: 2; color: var(--text); }
+    .success p { margin-top: 14px; font-size: clamp(14px, 3.5vw, 18px); color: var(--muted); }
+
+    .ritual-circle {
+      position: absolute; width: 200px; height: 200px; border: 2px solid var(--accent); border-radius: 50%;
+      box-shadow: 0 8px 40px rgba(138,110,74,0.08), inset 0 0 20px rgba(138,110,74,0.04);
+      animation: expandGlow 0.8s ease-out forwards; opacity: 0; z-index: 1; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    }
+    @keyframes expandGlow {
+      0% {width: 0; height: 0; opacity: 1;}
+      70% {width: 300px; height: 300px; opacity: 0.5;}
+      100% {width: 420px; height: 420px; opacity: 0;}
+    }
+
+    /* --- Recent Summonings panel: made beige + dark text --- */
+    .panel {
+      position: fixed; left: 15px; bottom: 15px;
+      width: 320px; max-width: calc(100vw - 30px); max-height: 320px;
+      background: var(--surface); /* changed to beige surface */
+      border-radius: 12px; padding: 12px; box-shadow: 0 12px 40px rgba(0,0,0,0.06);
+      z-index: 10; overflow-y: auto; display: flex; flex-direction: column; scroll-behavior: smooth;
+      backdrop-filter: blur(6px);
+      border: 1px solid var(--border);
+      color: var(--text); /* dark text */
+    }
+    .panel h3 {
+      font-family: 'Orbitron', sans-serif; color: var(--text); font-size: 15px; margin-bottom: 8px; text-align: center;
+      padding: 6px; border-radius: 10px; background: rgba(0,0,0,0.02); font-weight: 900;
+    }
+    .entry {
+      display: flex; align-items: center; margin: 8px 0; padding: 10px;
+      background: rgba(27,27,24,0.02); /* subtle contrast on beige */
+      border-radius: 12px; position: relative; flex-shrink: 0; scroll-snap-align: start;
+      border: 1px solid rgba(0,0,0,0.03);
+    }
+    .entry img {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 2px solid rgba(0,0,0,0.06); margin-right: 10px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    }
+    .entry .name {
+      color: var(--text); font-weight: 700; font-family: 'Orbitron', sans-serif;
+      font-size: 13px; text-align: left; flex: 1;
+    }
+    .entry .pledge {
+      color: var(--muted); font-size: 12px; margin-top: 2px; text-align: left; flex: 1;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Marker styles on dark map (unchanged) */
+    .ritual-marker { animation: markerAppear 0.18s ease-out; }
+    .ritual-marker img {
+      border-radius: 50%;
+      border: 3px solid var(--marker-outline);
+      box-shadow: 0 10px 30px var(--marker-glow), 0 2px 6px rgba(0,0,0,0.6);
+      display: block;
+    }
+    @keyframes markerAppear {
+      0% {transform: scale(0); opacity: 0;}
+      70% {transform: scale(1.08);}
+      100% {transform: scale(1); opacity: 1;}
+    }
+
+    #resetConfirm {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100dvh; background: rgba(11,11,11,0.94);
+      display: none; align-items: center; justify-content: center; flex-direction: column; z-index: 400; color: #fff; text-align: center; font-family: 'Orbitron', sans-serif;
+    }
+    #resetConfirm button { margin: 12px; font-size: 18px; padding: 12px 34px; border-radius: 999px; font-weight: 900; cursor: pointer; transition: 0.16s; }
+    #confirmReset {background: #8a6e4a; color: #fff; box-shadow: 0 10px 30px rgba(138,110,74,0.18);}
+    #confirmReset:hover {transform: translateY(-4px);}
+    #cancelReset {background: rgba(255,255,255,0.06); color: #fff; border: 1px solid rgba(255,255,255,0.06);}
+    #cancelReset:hover {background: rgba(255,255,255,0.08);}
+
+    .leaflet-popup-content-wrapper {
+      background: rgba(24,24,24,0.95) !important; color: #fff !important;
+      border-radius: 12px !important; padding: 0 !important; box-shadow: 0 12px 40px rgba(0,0,0,0.6) !important;
+      border: 1px solid rgba(255,255,255,0.03) !important;
+    }
+    .leaflet-popup-content {
+      margin: 0 !important; padding: 12px !important; text-align: center !important;
+      font-family: 'Orbitron', sans-serif !important; position: relative;
+    }
+    .leaflet-popup-content img {
+      width: 64px !important; height: 64px !important; border-radius: 50% !important;
+      border: 2px solid var(--marker-outline) !important; margin-bottom: 8px !important;
+      box-shadow: 0 10px 30px var(--marker-glow) !important; z-index: 2;
+    }
+    .leaflet-popup-content b {color: #fff !important; font-size: 15px !important; display: block; margin: 6px 0;}
+    .leaflet-popup-content i {font-size: 13px !important; color: #dcd6c9; display: block;}
+    .leaflet-popup-tip {background: #8a6e4a !important; box-shadow: 0 6px 18px rgba(138,110,74,0.12) !important;}
+
+    .delete-marker-btn {
+      margin-top: 10px; padding: 8px 20px; background: #a02b2b; color: #fff;
+      border-radius: 12px; cursor: pointer; font-family: 'Orbitron', sans-serif; font-size: 12px; font-weight: 700;
+      box-shadow: 0 6px 20px rgba(160,43,43,0.08); transition: 0.12s; display: none;
+    }
+    .admin-mode .delete-marker-btn {display: inline-block;}
+    .delete-marker-btn:hover {transform: translateY(-3px);}
+
+    .map-click-pulse {
+      position: absolute; width: 60px; height: 60px; background: rgba(138,110,74,0.12);
+      border-radius: 50%; pointer-events: none; z-index: 999; animation: clickPulse 0.6s ease-out forwards;
+    }
+    @keyframes clickPulse {0% {transform: scale(0); opacity: 1;}100% {transform: scale(3); opacity: 0;}}
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div class="title-bar">
+    <div id="ritualLogo"><img src="rialo.png" draggable="false" alt="logo"></div>
+    <div class="title-text" id="titleLink">RIALO</div>
+  </div>
+
+  <div class="subtitle">Rethink. Rebuild. Rialo.</div>
+
+  <div class="counter-box">
+    <div class="count" id="ritualCount">0</div>
+    <div class="label">Total Users</div>
+  </div>
+
+  <div class="panel">
+    <h3>Recent Summonings</h3>
+    <div id="recent"></div>
+  </div>
+
+  <div class="modal" id="ritualModal">
+    <div class="card">
+      <div class="close-btn" id="closeBtn">✕</div>
+      <h2>RIALO CULT</h2>
+      <div class="avatar-circle"><img src="rialo.png" id="avatarPreview" draggable="false" alt="avatar"></div>
+      <label class="upload-btn">UPLOAD AVATAR</label>
+      <input type="file" id="avatarInput" accept="image/*" style="display:none;">
+      <input type="text" class="input-field" id="username" placeholder="X / Twitter username">
+      <textarea class="pledge-field input-field" id="pledge" placeholder="Write your Oath..."></textarea>
+      <button class="join-btn">JOIN THE CULT</button>
+    </div>
+  </div>
+
+  <div class="success" id="success">
+    <div class="ritual-circle" aria-hidden="true"></div>
+    <h1>Welcome to Rialo</h1>
+    <p>Rethink. Rebuild. Rialo.</p>
+  </div>
+
+  <div id="resetConfirm">
+    <div style="font-size:20px; margin-bottom:14px; color:#fff;">RESET THE CIRCLE?</div>
+    <button id="confirmReset">BURN IT ALL</button>
+    <button id="cancelReset">CANCEL</button>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://hffrcslglevnokzhuzzd.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmZnJjc2xnbGV2bm9remh1enpkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1NTg2OTgsImV4cCI6MjA3OTEzNDY5OH0.TwxLFEbX3mTFT5NT7UORWJszF5bt2NpX926KSZLI8YU';
+    const { createClient } = window.supabase;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    window.addEventListener('load', () => {
+      const bounds = L.latLngBounds([[-89, -200], [89, 200]]);
+
+      const map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false,
+        minZoom: 2,
+        maxZoom: 19,
+        maxBounds: bounds,
+        maxBoundsViscosity: 0.5,
+        worldCopyJump: false,
+        inertia: true,
+        inertiaDeceleration: 2000,
+        zoomAnimation: true
+      }).setView([10, 0], 2);
+
+      // Dark basemap so markers / avatars pop
+      L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: ''
+      }).addTo(map);
+
+      setTimeout(() => map.invalidateSize(), 50);
+
+      const markers = L.layerGroup().addTo(map);
+      const recent = document.getElementById('recent');
+      const countDisplay = document.getElementById('ritualCount');
+      let clickedPos = null;
+      let logoClicks = 0;
+      let adminMode = false;
+      let adminClickTimer = null;
+      let totalCount = 0;
+
+      function updateCounter(count) {
+        totalCount = count;
+        countDisplay.textContent = count;
+      }
+
+      function getSize() {
+        const z = map.getZoom();
+        if (z <= 3) return 32;
+        if (z <= 5) return 44;
+        if (z <= 7) return 56;
+        return 72;
+      }
+
+      function createIcon(src) {
+        const s = getSize();
+        // Use divIcon and let CSS .ritual-marker img style handle border/glow
+        return L.divIcon({
+          className: 'ritual-marker',
+          html: `<img src="${src}" style="width:${s}px;height:${s}px;">`,
+          iconSize: [s, s],
+          iconAnchor: [s/2, s/2]
+        });
+      }
+
+      map.on('zoomend', () => {
+        markers.eachLayer(m => {
+          if (m.options.data?.avatar) m.setIcon(createIcon(m.options.data.avatar));
+        });
+      });
+
+      function addMarkerToMap(s) {
+        const icon = createIcon(s.avatar || 'rialo.png');
+        const m = L.marker([s.lat, s.lng], { icon, data: s }).addTo(markers);
+        updateMarkerPopup(m);
+        return m;
+      }
+
+      function updateMarkerPopup(marker) {
+        const s = marker.options.data;
+        if (!s) return;
+        const deleteBtn = adminMode ?
+          `<button class="delete-marker-btn" onclick="window.deleteMarker('${s.id}')">DELETE</button>` : '';
+        marker.bindPopup(`
+          <div>
+            <img src="${s.avatar || 'rialo.png'}" alt="avatar">
+            <b>@${s.name}</b>
+            <i>"${s.pledge}"</i>
+            ${deleteBtn}
+          </div>
+        `, { closeButton: false, maxWidth: 220 });
+      }
+
+      // Global delete function
+      window.deleteMarker = async function(markerId) {
+        if (!adminMode) return;
+        if (!confirm('Delete this summoning permanently?')) return;
+        try {
+          const { error } = await supabase
+            .from('summonings')
+            .delete()
+            .eq('id', markerId);
+          if (error) throw error;
+          markers.eachLayer(m => {
+            if (m.options.data?.id === markerId) markers.removeLayer(m);
+          });
+          const entry = document.querySelector(`.entry[data-id="${markerId}"]`);
+          if (entry) entry.remove();
+          updateCounter(Math.max(0, totalCount - 1));
+        } catch (e) {
+          alert('Failed to delete: ' + e.message);
+          console.error('Delete error:', e);
+        }
+      };
+
+      function addToRecent(s, prepend = true) {
+        if (s.id && document.querySelector(`.entry[data-id="${s.id}"]`)) return;
+        const entry = document.createElement('div');
+        entry.className = 'entry';
+        if (s.id) entry.dataset.id = s.id;
+        entry.innerHTML = `
+          <img src="${s.avatar || 'rialo.png'}" alt="avatar">
+          <div><div class="name">@${s.name}</div><div class="pledge">"${s.pledge}"</div></div>
+        `;
+        if (prepend) recent.insertBefore(entry, recent.firstChild);
+        else recent.appendChild(entry);
+      }
+
+      async function loadAll() {
+        try {
+          const cached = localStorage.getItem('ritualnet_cache');
+          if (cached) {
+            const cachedData = JSON.parse(cached);
+            if (cachedData && cachedData.data && Array.isArray(cachedData.data)) {
+              cachedData.data.forEach(s => {
+                addMarkerToMap(s);
+                addToRecent(s, false);
+              });
+              updateCounter(cachedData.data.length);
+            }
+          }
+        } catch (e) {
+          console.warn('Cache load failed:', e);
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from('summonings')
+            .select('*')
+            .order('timestamp', { ascending: false })
+            .limit(100);
+          if (error) throw error;
+          if (data && data.length > 0) {
+            updateCounter(data.length);
+            try {
+              localStorage.setItem('ritualnet_cache', JSON.stringify({
+                data: data.slice(0, 50),
+                timestamp: Date.now()
+              }));
+            } catch (e) { console.warn('Cache save failed:', e); }
+            const existingIds = new Set();
+            markers.eachLayer(m => { if (m.options.data?.id) existingIds.add(m.options.data.id); });
+            const hasChanges = data.some(s => !existingIds.has(s.id)) || data.length !== existingIds.size;
+            if (hasChanges) {
+              markers.clearLayers();
+              recent.innerHTML = '';
+              data.forEach(s => { addMarkerToMap(s); addToRecent(s, false); });
+            }
+          }
+        } catch (e) {
+          console.warn('Load error:', e);
+        }
+      }
+
+      loadAll();
+
+      const channel = supabase.channel('summonings-realtime')
+        .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'summonings'
+        }, payload => {
+          const row = payload.new;
+          if (!document.querySelector(`.entry[data-id="${row.id}"]`)) {
+            addMarkerToMap(row);
+            addToRecent(row, true);
+            updateCounter(totalCount + 1);
+          }
+        })
+        .subscribe((status) => {
+          console.log('Realtime status:', status);
+        });
+
+      map.on('click', e => {
+        clickedPos = e.latlng;
+        // Small click pulse for visual feedback
+        const pulse = document.createElement('div');
+        pulse.className = 'map-click-pulse';
+        pulse.style.left = `${event.clientX - 30}px`;
+        pulse.style.top = `${event.clientY - 30}px`;
+        document.body.appendChild(pulse);
+        setTimeout(() => pulse.remove(), 700);
+
+        const modal = document.getElementById('ritualModal');
+        modal.style.display = 'flex';
+        setTimeout(() => modal.classList.add('show'), 10);
+        document.getElementById('avatarPreview').src = 'rialo.png';
+        document.getElementById('username').value = '';
+        document.getElementById('pledge').value = '';
+      });
+
+      document.getElementById('titleLink').onclick = () => window.open('https://x.com/ritualnet', '_blank');
+
+      const closeModal = () => {
+        const modal = document.getElementById('ritualModal');
+        modal.classList.remove('show');
+        setTimeout(() => modal.style.display = 'none', 200);
+      };
+
+      document.getElementById('closeBtn').onclick = closeModal;
+      document.querySelector('.modal').onclick = e => { if (e.target.classList.contains('modal')) closeModal(); };
+
+      document.querySelector('.upload-btn').onclick = () => document.getElementById('avatarInput').click();
+      document.getElementById('avatarInput').onchange = e => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = ev => document.getElementById('avatarPreview').src = ev.target.result;
+          reader.readAsDataURL(file);
+        }
+      };
+
+      document.querySelector('.join-btn').onclick = () => {
+        const avatar = document.getElementById('avatarPreview').src;
+        const name = document.getElementById('username').value.trim() || "ritualist";
+        const pledge = document.getElementById('pledge').value.trim() || "I have joined.";
+        if (!clickedPos) return;
+
+        const tempId = 'temp-' + Date.now();
+        const newSummon = {
+          id: tempId,
+          name,
+          pledge,
+          avatar,
+          lat: clickedPos.lat,
+          lng: clickedPos.lng,
+          timestamp: Date.now()
+        };
+
+        const marker = addMarkerToMap(newSummon);
+        addToRecent(newSummon, true);
+        updateCounter(totalCount + 1);
+
+        closeModal();
+
+        const success = document.getElementById('success');
+        success.classList.add('active');
+
+        map.flyTo(clickedPos, 10, { duration: 0.6 });
+
+        setTimeout(() => success.classList.remove('active'), 900);
+
+        supabase.from('summonings')
+          .insert({
+            name,
+            pledge,
+            avatar,
+            lat: clickedPos.lat,
+            lng: clickedPos.lng,
+            timestamp: newSummon.timestamp
+          })
+          .select()
+          .then(({ data, error }) => {
+            if (error) {
+              console.warn('Save error:', error);
+            } else if (data && data[0]) {
+              marker.options.data.id = data[0].id;
+              const tempEntry = document.querySelector(`.entry[data-id="${tempId}"]`);
+              if (tempEntry) tempEntry.dataset.id = data[0].id;
+            }
+          })
+          .catch(err => { console.error('Database save failed:', err); });
+      };
+
+      document.getElementById('ritualLogo').onclick = () => {
+        logoClicks++;
+        if (adminClickTimer) clearTimeout(adminClickTimer);
+
+        if (logoClicks === 7) {
+          adminMode = !adminMode;
+          document.body.classList.toggle('admin-mode', adminMode);
+          const logo = document.getElementById('ritualLogo');
+          if (adminMode) {
+            logo.style.boxShadow = '0 12px 36px rgba(160,90,45,0.16)';
+            alert('ADMIN MODE ACTIVATED');
+          } else {
+            logo.style.boxShadow = '';
+            alert('Admin mode deactivated');
+          }
+          markers.eachLayer(m => { if (m.options.data) updateMarkerPopup(m); });
+          logoClicks = 0;
+        } else if (logoClicks === 14) {
+          document.getElementById('resetConfirm').style.display = 'flex';
+          logoClicks = 0;
+        } else {
+          adminClickTimer = setTimeout(() => { logoClicks = 0; }, 3000);
+        }
+      };
+
+      document.getElementById('confirmReset').onclick = async () => {
+        await supabase.from('summonings').delete().neq('timestamp', 0);
+        loadAll();
+        document.getElementById('resetConfirm').style.display = 'none';
+      };
+
+      document.getElementById('cancelReset').onclick = () => {
+        document.getElementById('resetConfirm').style.display = 'none';
+      };
+    });
+  </script>
+</body>
+</html>
