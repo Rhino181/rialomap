@@ -171,7 +171,7 @@
     .ritual-circle {
       position: absolute; width: 200px; height: 200px; border: 2px solid var(--accent); border-radius: 50%;
       box-shadow: 0 8px 40px rgba(138,110,74,0.08), inset 0 0 20px rgba(138,110,74,0.04);
-      animation: expandGlow 0.8s ease-out forwards; opacity: 0; z-index: 1; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      animation: expandGlow 2s ease-out forwards; opacity: 0; z-index: 1; top: 50%; left: 50%; transform: translate(-50%, -50%);
     }
     @keyframes expandGlow {
       0% {width: 0; height: 0; opacity: 1;}
@@ -281,7 +281,7 @@
     <!-- Title + subtitle grouped inside the beige title-bar -->
     <div class="title-group">
       <div class="title-text" id="titleLink">RIALO</div>
-      <div class="subtitle">Rethink. Rebuild. Rialo</div>
+      <div class="subtitle">Rethink. Rebuild. Rialo.</div>
     </div>
   </div>
 
@@ -311,7 +311,7 @@
   <div class="success" id="success">
     <div class="ritual-circle" aria-hidden="true"></div>
     <h1>Welcome to Rialo</h1>
-    <p>The only network you need</p>
+    <p>Rethink. Rebuild. Rialo.</p>
   </div>
 
   <div id="resetConfirm">
@@ -613,7 +613,7 @@
 
         map.flyTo(clickedPos, 10, { duration: 0.6 });
 
-        setTimeout(() => success.classList.remove('active'), 900);
+        setTimeout(() => success.classList.remove('active'), 2000);
 
         supabase.from('summonings')
           .insert({
