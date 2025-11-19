@@ -487,6 +487,7 @@
 
       loadAll();
 
+      // Realtime subscription: handle insert & delete and subscribe properly
       const channel = supabase.channel('summonings-realtime')
         .on('postgres_changes', {
           event: 'INSERT',
@@ -534,4 +535,138 @@
             }
           } catch (e) { console.warn('Cache update failed:', e); }
         })
-        .subscribe((status
+        .subscribe((status) => {
+          console.log('Realtime status:', status);
+        });
+
+      map.on('click', e => {
+        clickedPos = e.latlng;
+        // Small click pulse for visual feedback (use originalEvent coordinates)
+        const clientX = e.originalEvent ? e.originalEvent.clientX : (window.innerWidth/2);
+        const clientY = e.originalEvent ? e.originalEvent.clientY : (window.innerHeight/2);
+        const pulse = document.createElement('div');
+        pulse.className = 'map-click-pulse';
+        pulse.style.left = `${clientX - 30}px`;
+        pulse.style.top = `${clientY - 30}px`;
+        document.body.appendChild(pulse);
+        setTimeout(() => pulse.remove(), 700);
+
+        const modal = document.getElementById('ritualModal');
+        modal.style.display = 'flex';
+        setTimeout(() => modal.classList.add('show'), 10);
+        document.getElementById('avatarPreview').src = 'rialo.png';
+        document.getElementById('username').value = '';
+        document.getElementById('pledge').value = '';
+      });
+
+      document.getElementById('titleLink').onclick = () => window.open('https://x.com/ritualnet', '_blank');
+
+      const closeModal = () => {
+        const modal = document.getElementById('ritualModal');
+        modal.classList.remove('show');
+        setTimeout(() => modal.style.display = 'none', 200);
+      };
+
+      document.getElementById('closeBtn').onclick = closeModal;
+      document.querySelector('.modal').onclick = e => { if (e.target.classList.contains('modal')) closeModal(); };
+
+      document.querySelector('.upload-btn').onclick = () => document.getElementById('avatarInput').click();
+      document.getElementById('avatarInput').onchange = e => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = ev => document.getElementById('avatarPreview').src = ev.target.result;
+          reader.readAsDataURL(file);
+        }
+      };
+
+      document.querySelector('.join-btn').onclick = () => {
+        const avatar = document.getElementById('avatarPreview').src;
+        const name = document.getElementById('username').value.trim() || "ritualist";
+        const pledge = document.getElementById('pledge').value.trim() || "I have joined.";
+        if (!clickedPos) return;
+
+        const tempId = 'temp-' + Date.now();
+        const newSummon = {
+          id: tempId,
+          name,
+          pledge,
+          avatar,
+          lat: clickedPos.lat,
+          lng: clickedPos.lng,
+          timestamp: Date.now()
+        };
+
+        const marker = addMarkerToMap(newSummon);
+        addToRecent(newSummon, true);
+        updateCounter(totalCount + 1);
+
+        closeModal();
+
+        const success = document.getElementById('success');
+        success.classList.add('active');
+
+        map.flyTo(clickedPos, 10, { duration: 0.6 });
+
+        setTimeout(() => success.classList.remove('active'), 900);
+
+        supabase.from('summonings')
+          .insert({
+            name,
+            pledge,
+            avatar,
+            lat: clickedPos.lat,
+            lng: clickedPos.lng,
+            timestamp: newSummon.timestamp
+          })
+          .select()
+          .then(({ data, error }) => {
+            if (error) {
+              console.warn('Save error:', error);
+            } else if (data && data[0]) {
+              marker.options.data.id = data[0].id;
+              const tempEntry = document.querySelector(`.entry[data-id="${tempId}"]`);
+              if (tempEntry) tempEntry.dataset.id = data[0].id;
+            }
+          })
+          .catch(err => { console.error('Database save failed:', err); });
+      };
+
+      document.getElementById('ritualLogo').onclick = () => {
+        logoClicks++;
+        if (adminClickTimer) clearTimeout(adminClickTimer);
+
+        if (logoClicks === 7) {
+          adminMode = !adminMode;
+          document.body.classList.toggle('admin-mode', adminMode);
+          const logo = document.getElementById('ritualLogo');
+          if (adminMode) {
+            logo.style.boxShadow = '0 12px 36px rgba(160,90,45,0.16)';
+            alert('ADMIN MODE ACTIVATED');
+          } else {
+            logo.style.boxShadow = '';
+            alert('Admin mode deactivated');
+          }
+          markers.eachLayer(m => { if (m.options.data) updateMarkerPopup(m); });
+          logoClicks = 0;
+        } else if (logoClicks === 14) {
+          document.getElementById('resetConfirm').style.display = 'flex';
+          logoClicks = 0;
+        } else {
+          adminClickTimer = setTimeout(() => { logoClicks = 0; }, 3000);
+        }
+      };
+
+      document.getElementById('confirmReset').onclick = async () => {
+        await supabase.from('summonings').delete().neq('timestamp', 0);
+        loadAll();
+        document.getElementById('resetConfirm').style.display = 'none';
+      };
+
+      document.getElementById('cancelReset').onclick = () => {
+        document.getElementById('resetConfirm').style.display = 'none';
+      };
+    });
+  </script>
+</body>
+</html>
